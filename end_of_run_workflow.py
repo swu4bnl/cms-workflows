@@ -8,7 +8,7 @@ from prefect.context import FlowRunContext
 from prefect.settings import PREFECT_UI_URL
 
 #from analysis import run_analysis
-from data_validation import read_all_streams, data_validation_task, get_run
+from data_validation import data_validation_task, get_run
 from linker import create_symlinks
 from dotenv import load_dotenv
 
@@ -90,7 +90,6 @@ def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
     linker_task = create_symlinks.submit(uid, api_key=api_key, dry_run=dry_run)
     logger.info("Launched linker task")
 
-    read_streams_task = read_all_streams.submit(uid, api_key=api_key)
     validation_task = data_validation_task.submit(uid, api_key=api_key)
     logger.info("Launched validation tasks")
 
@@ -100,7 +99,6 @@ def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
     # Wait for all tasks to comple
     logger.info("Waiting for tasks to complete")
     linker_task.result()
-    read_streams_task.result()
     validation_task.result()
     # analysis_task.result()
     log_completion()
