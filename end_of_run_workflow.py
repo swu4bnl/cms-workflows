@@ -83,6 +83,7 @@ def log_completion():
 @flow(task_runner=ConcurrentTaskRunner())
 @slack
 def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
+    load_dotenv()
     logger = get_run_logger()
     uid = stop_doc["run_start"]
 
