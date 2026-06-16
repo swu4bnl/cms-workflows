@@ -3,7 +3,6 @@ import time
 
 from prefect import flow, get_run_logger, task
 
-from bluesky_tiled_plugins.writing.validator import validate
 from tiled.client import from_uri
 from dotenv import load_dotenv
 
@@ -33,29 +32,6 @@ def get_run_migration(uid, api_key=None): # TODO remove after migration is compl
     return run
 
 
-@task
-def read_stream(run, stream):
-    stream_data = run[stream].read()
-    return stream_data
-
-
-@task(retries=2, retry_delay_seconds=10)
-def read_all_streams(uid, api_key=None):
-    logger = get_run_logger()
-    run = get_run(uid, api_key=api_key)
-    logger.info(f"Validating uid {run.start['uid']}")
-    start_time = time.monotonic()
-    for stream in run:
-        logger.info(f"{stream}:")
-        stream_start_time = time.monotonic()
-        stream_data = read_stream(run, stream)
-        stream_elapsed_time = time.monotonic() - stream_start_time
-        logger.info(f"{stream} elapsed_time = {stream_elapsed_time}")
-        logger.info(f"{stream} nbytes = {stream_data.nbytes:_}")
-    elapsed_time = time.monotonic() - start_time
-    logger.info(f"{elapsed_time = }")
-
-
 @task(retries=3, retry_delay_seconds=20)
 def data_validation_task(uid, api_key=None):
     """Task to validate the data structure and accessibility in Tiled
@@ -73,7 +49,7 @@ def data_validation_task(uid, api_key=None):
     run = get_run_migration(uid, api_key=api_key)
     logger.info(f"Validating uid {uid}")
     start_time = time.monotonic()
-    validate(run, fix_errors=True, try_reading=True, raise_on_error=True)
+    run.validate(fix_errors=True, try_reading=True, raise_on_error=True)
     elapsed_time = time.monotonic() - start_time
     logger.info(f"Finished validating data; {elapsed_time = }")
 
