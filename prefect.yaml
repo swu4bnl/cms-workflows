@@ -9,7 +9,9 @@ pull:
   - prefect.deployments.steps.set_working_directory:
       directory: /repo
   - prefect.deployments.steps.git_clone:
-      repository: https://github.com/nsls2/cms-workflows.git
+      # Dev testing: point deployment source to a fork/branch.
+      # Update the branch below when testing a feature branch.
+      repository: https://github.com/faidfaisal/cms-workflows.git
       branch: main
 
 deployments:
@@ -20,7 +22,17 @@ deployments:
       - main
     description: Deploy the updated Docker image
     entrypoint: end_of_run_workflow.py:end_of_run_workflow
-    parameters: {}
+    parameters:
+      enable_anchor_autostitch: false
+      stitch_repo_path: /srv/auto-stitching
+      max_lookback: 50
+      stitch_config_path: configs/stitching_defaults.json
+      stitch_out_dir: stitching_outputs_prefect
+      stitch_plot: true
+      stitch_show_colorbar: true
+      stitch_tiled_uri: null
+      stitch_catalog_path: null
+      verify_anchor_outputs: true
     schedule: {}
     work_pool:
       job_variables:
