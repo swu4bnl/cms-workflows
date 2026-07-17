@@ -24,7 +24,7 @@ deployments:
     entrypoint: end_of_run_workflow.py:end_of_run_workflow
     parameters:
       enable_anchor_autostitch: false
-      stitch_repo_path: /srv/auto-stitching
+      stitch_repo_path: null
       max_lookback: 50
       stitch_config_path: configs/stitching_defaults.json
       stitch_out_dir: stitching_outputs_prefect

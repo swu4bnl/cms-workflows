@@ -170,10 +170,12 @@ def run_auto_stitch_anchor(
     run = get_run(uid, api_key=api_key)
     scan_id = int(run.start["scan_id"])
 
+    bundled_repo = Path(__file__).resolve().parent / "auto_stitch"
+
     repo_root = Path(
         stitch_repo_path
         or os.getenv("CMS_AUTO_STITCH_REPO", "")
-        or "/srv/auto-stitching"
+        or str(bundled_repo)
     ).expanduser()
     if not repo_root.exists() or not (repo_root / "stitch.py").exists():
         raise FileNotFoundError(
