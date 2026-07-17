@@ -52,7 +52,7 @@ def slack(func):
             result = func(stop_doc, api_key=api_key, dry_run=dry_run)
 
             # Send a message to mon-prefect-cms if flow-run is successful.
-            message = f":white_check_mark: {CATALOG_NAME} flow-run successful. (*{flow_run_name}*)\n ```run_start: {uid}\nscan_id: {scan_id}```"
+            message = f":white_check_mark: (This is from a test, ignore that if it fails){CATALOG_NAME} flow-run successful. (*{flow_run_name}*)\n ```run_start: {uid}\nscan_id: {scan_id}```"
             mon_prefect_cms.notify(message)
             return result
         except Exception as e:
