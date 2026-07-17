@@ -9,7 +9,7 @@ pull:
   - prefect.deployments.steps.set_working_directory:
       directory: /repo
   - prefect.deployments.steps.git_clone:
-      repository: https://github.com/nsls2/cms-workflows.git
+      repository: https://github.com/swu4bnl/cms-workflows.git
       branch: main
 
 deployments:
