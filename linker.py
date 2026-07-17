@@ -43,10 +43,6 @@ def create_symlinks(ref, api_key=None, dry_run=False):
     hrf = get_run(ref, api_key=api_key)
     for name, doc in hrf.documents():
         if name == "start":
-            if doc.get('experiment_project'):
-                # NOTE: shortcut for the workflow before data security; to be removed later
-                logger.info("Skipping the creation of the link because 'experiment_project' is set.")
-                return
             if detectors := doc.get("detectors"):
                 pass
             else:
