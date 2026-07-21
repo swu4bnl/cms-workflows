@@ -8,9 +8,11 @@ from prefect.context import FlowRunContext
 from prefect.settings import PREFECT_UI_URL
 
 #from analysis import run_analysis
+from auto_stitch import run_auto_stitch_anchor, verify_stitch_outputs
 from data_validation import data_validation_task, get_run
 from linker import create_symlinks
 from dotenv import load_dotenv
+from workflow_settings import load_stitch_settings
 
 CATALOG_NAME = "cms"
 
@@ -86,8 +88,9 @@ def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
     load_dotenv()
     logger = get_run_logger()
     uid = stop_doc["run_start"]
+    stitch = load_stitch_settings()
 
-    # Launch validation, analysis, and linker tasks concurrently
+    # Launch core tasks concurrently
     linker_task = create_symlinks.submit(uid, api_key=api_key, dry_run=dry_run)
     logger.info("Launched linker task")
 
@@ -97,9 +100,20 @@ def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
     # analysis_task = run_analysis(raw_ref=uid)
     # logger.info("Launched analysis task")
 
-    # Wait for all tasks to comple
+    pending = [linker_task, validation_task]
+
+    if stitch.enabled:
+        stitch_task = run_auto_stitch_anchor.submit(uid, api_key=api_key, stitch_config=stitch.config)
+        logger.info("Launched anchor auto-stitch task")
+        pending.append(stitch_task)
+    else:
+        logger.info("Anchor auto-stitch is disabled for this deployment")
+
     logger.info("Waiting for tasks to complete")
-    linker_task.result()
-    validation_task.result()
-    # analysis_task.result()
+    for t in pending:
+        t.result()
+
+    if stitch.enabled and stitch.verify_outputs:
+        verify_stitch_outputs.submit(uid, api_key=api_key).result()
+
     log_completion()
