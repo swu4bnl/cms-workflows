@@ -20,7 +20,10 @@ deployments:
       - main
     description: Deploy the updated Docker image
     entrypoint: end_of_run_workflow.py:end_of_run_workflow
-    parameters: {}
+    parameters:
+      enable_anchor_autostitch: false
+      verify_anchor_outputs: true
+      stitch_config: null
     schedule: {}
     work_pool:
       job_variables:

@@ -8,6 +8,7 @@ from prefect.context import FlowRunContext
 from prefect.settings import PREFECT_UI_URL
 
 #from analysis import run_analysis
+from auto_stitch import run_auto_stitch_anchor, verify_stitch_outputs
 from data_validation import data_validation_task, get_run
 from linker import create_symlinks
 from dotenv import load_dotenv
@@ -26,7 +27,7 @@ def slack(func):
     the flow. To keep the naming of workflows consistent, the name of this inner function had to match the expected name.
     """
 
-    def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
+    def end_of_run_workflow(stop_doc, api_key=None, dry_run=False, **kwargs):
         flow_run_name = FlowRunContext.get().flow_run.dict().get("name")
 
         # Load slack credentials that are saved in Prefect.
@@ -49,7 +50,7 @@ def slack(func):
             )
 
         try:
-            result = func(stop_doc, api_key=api_key, dry_run=dry_run)
+            result = func(stop_doc, api_key=api_key, dry_run=dry_run, **kwargs)
 
             # Send a message to mon-prefect-cms if flow-run is successful.
             message = f":white_check_mark: (This is from a test, ignore that if it fails){CATALOG_NAME} flow-run successful. (*{flow_run_name}*)\n ```run_start: {uid}\nscan_id: {scan_id}```"
@@ -82,7 +83,33 @@ def log_completion():
 
 @flow(task_runner=ConcurrentTaskRunner())
 @slack
-def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
+def end_of_run_workflow(
+    stop_doc,
+    api_key=None,
+    dry_run=False,
+    enable_anchor_autostitch=False,
+    verify_anchor_outputs=True,
+    stitch_config=None,
+):
+    """End-of-run Prefect flow.
+
+    Parameters
+    ----------
+    stop_doc : dict
+        Bluesky stop document.
+    api_key : str, optional
+        Tiled API key.
+    dry_run : bool, optional
+        When True the linker task skips filesystem writes.
+    enable_anchor_autostitch : bool, optional
+        Enable the anchor-mode auto-stitch task (default: False).
+    verify_anchor_outputs : bool, optional
+        Run output verification after stitching (default: True).
+    stitch_config : dict, optional
+        Optional stitch behavior overrides forwarded to
+        ``run_auto_stitch_anchor``. See ``auto_stitch.run_auto_stitch_anchor``
+        for supported keys.
+    """
     load_dotenv()
     logger = get_run_logger()
     uid = stop_doc["run_start"]
@@ -94,12 +121,23 @@ def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
     validation_task = data_validation_task.submit(uid, api_key=api_key)
     logger.info("Launched validation tasks")
 
+    stitch_task = None
+    if bool(enable_anchor_autostitch):
+        stitch_task = run_auto_stitch_anchor.submit(uid, api_key=api_key, stitch_config=stitch_config)
+        logger.info("Launched anchor auto-stitch task")
+    else:
+        logger.info("Anchor auto-stitch is disabled for this deployment")
+
     # analysis_task = run_analysis(raw_ref=uid)
     # logger.info("Launched analysis task")
 
-    # Wait for all tasks to comple
+    # Wait for all tasks to complete
     logger.info("Waiting for tasks to complete")
     linker_task.result()
     validation_task.result()
+    if stitch_task is not None:
+        stitch_result = stitch_task.result()
+        if bool(verify_anchor_outputs):
+            verify_stitch_outputs.submit(stitch_result).result()
     # analysis_task.result()
     log_completion()
