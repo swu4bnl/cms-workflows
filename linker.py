@@ -25,6 +25,10 @@ def chmod_and_chown(path, *, uid=None, gid=None, mode=0o775):
     #if uid is not None and gid is not None:
     #    os.chown(path, uid, gid)
 
+def make_relative_path(path_value):
+    path = Path(path_value)
+    return Path(*path.parts[1:]) if path.is_absolute() else path
+
 @task(retries=2, retry_delay_seconds=10)
 def create_symlinks(ref, api_key=None, dry_run=False):
     """
@@ -39,10 +43,6 @@ def create_symlinks(ref, api_key=None, dry_run=False):
     hrf = get_run(ref, api_key=api_key)
     for name, doc in hrf.documents():
         if name == "start":
-            if doc.get('experiment_project'):
-                # NOTE: shortcut for the workflow before data security; to be removed later
-                logger.info("Skipping the creation of the link because 'experiment_project' is set.")
-                return
             if detectors := doc.get("detectors"):
                 pass
             else:
@@ -56,13 +56,14 @@ def create_symlinks(ref, api_key=None, dry_run=False):
             if path_expr_alias := doc.get("experiment_alias_directory"):
                 path_proposal = Path(f"/nsls2/data/cms/proposals/{doc['cycle']}/{doc['data_session']}")
                 # stats = path_proposal.stat()
-                path_expr = path_proposal / "experiments"   # experiments directory
+                experiments_dir = make_relative_path(doc.get("experiments_directory", "experiments"))
+                path_expr = path_proposal / experiments_dir
                 if dry_run:
                     logger.info(f"Dry run: mkdir {path_expr}")
                 else:
                     path_expr.mkdir(exist_ok=True, parents=True)
                 #chmod_and_chown(path_expr, uid=stats.st_uid, gid=stats.st_gid)
-                path_expr_alias = path_expr / path_expr_alias
+                path_expr_alias = path_expr / make_relative_path(path_expr_alias)
                 if dry_run:
                     logger.info(f"Dry run: mkdir {path_expr_alias}")
                 else:

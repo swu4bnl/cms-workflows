@@ -9,9 +9,7 @@ pull:
   - prefect.deployments.steps.set_working_directory:
       directory: /repo
   - prefect.deployments.steps.git_clone:
-      # Dev testing: point deployment source to a fork/branch.
-      # Update the branch below when testing a feature branch.
-      repository: https://github.com/faidfaisal/cms-workflows.git
+      repository: https://github.com/swu4bnl/cms-workflows.git
       branch: main
 
 deployments:
