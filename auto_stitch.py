@@ -2,19 +2,40 @@
 
 Follows the same pattern as linker.py and data_validation.py: one module
 per concern, imported by end_of_run_workflow.py for orchestration.
-
-The subprocess-based CLI invocation is intentionally isolated here as an
-adapter boundary. If a direct Python entrypoint becomes available it can
-replace the subprocess call without touching the workflow orchestration.
 """
 
 import os
-import subprocess
+import importlib.util
+import sys
 from pathlib import Path
 
 from prefect import get_run_logger, task
 
 from data_validation import get_run
+
+
+def _bundled_repo_path() -> Path:
+    return Path(__file__).resolve().parent / "auto_stitch"
+
+
+def _resolve_repo_path(repo_root: Path, path_value: str) -> Path:
+    path = Path(path_value).expanduser()
+    return path if path.is_absolute() else repo_root / path
+
+
+def _load_stitch_runner(repo_root: Path):
+    repo_path = str(repo_root)
+    if repo_path not in sys.path:
+        sys.path.insert(0, repo_path)
+
+    module_path = repo_root / "stitch.py"
+    spec = importlib.util.spec_from_file_location("cms_workflows_stitch", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load stitch runner from {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.run_stitch_validation
 
 
 def _categorize_anchor_failure(stderr: str) -> str:
@@ -69,7 +90,7 @@ def run_auto_stitch_anchor(uid, api_key=None, stitch_config=None):
     run = get_run(uid, api_key=api_key)
     scan_id = int(run.start["scan_id"])
 
-    bundled_repo = Path(__file__).resolve().parent / "auto_stitch"
+    bundled_repo = _bundled_repo_path()
     repo_root = Path(
         config.get("repo_path") or os.getenv("CMS_AUTO_STITCH_REPO", "") or str(bundled_repo)
     ).expanduser()
@@ -81,23 +102,10 @@ def run_auto_stitch_anchor(uid, api_key=None, stitch_config=None):
         )
 
     max_lookback = int(config.get("max_lookback", 50))
-    config_path = config.get("config_path", "configs/stitching_defaults.json")
-    out_dir = config.get("out_dir", "stitching_outputs_prefect")
+    config_path = _resolve_repo_path(repo_root, config.get("config_path", "configs/stitching_defaults.json"))
+    out_dir = _resolve_repo_path(repo_root, config.get("out_dir", "stitching_outputs_prefect"))
     tiled_uri = config.get("tiled_uri")
     catalog_path = config.get("catalog_path")
-
-    command = [
-        "pixi", "run", "python", "stitch.py",
-        "run-anchor",
-        "--scan-id", str(scan_id),
-        "--max-lookback", str(max_lookback),
-        "--config", str(config_path),
-        "--out-dir", str(out_dir),
-    ]
-    if tiled_uri:
-        command.extend(["--tiled-uri", str(tiled_uri)])
-    if catalog_path:
-        command.extend(["--catalog-path", str(catalog_path)])
 
     logger.info(
         "Launching anchor-mode auto-stitch for uid=%s scan_id=%s repo=%s",
@@ -105,30 +113,29 @@ def run_auto_stitch_anchor(uid, api_key=None, stitch_config=None):
         scan_id,
         str(repo_root),
     )
-    proc = subprocess.run(
-        command,
-        cwd=str(repo_root),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.stdout:
-        logger.info(proc.stdout)
-    if proc.returncode != 0:
-        if proc.stderr:
-            logger.error(proc.stderr)
-        category = _categorize_anchor_failure(proc.stderr)
+
+    run_stitch_validation = _load_stitch_runner(repo_root)
+    try:
+        result = run_stitch_validation(
+            anchor_scan=scan_id,
+            max_lookback=max_lookback,
+            tiled_uri=tiled_uri or "https://tiled.nsls2.bnl.gov",
+            catalog_path=catalog_path or "cms/raw",
+            config_path=str(config_path),
+            out_dir=str(out_dir),
+        )
+    except Exception as exc:
+        category = _categorize_anchor_failure(str(exc))
         raise RuntimeError(
             f"Anchor auto-stitch failed for scan_id={scan_id} "
-            f"(exit={proc.returncode}, category={category})"
-        )
+            f"(category={category})"
+        ) from exc
 
     logger.info("Anchor auto-stitch completed for scan_id=%s", scan_id)
-    output_dir = (repo_root / out_dir).resolve()
     return {
         "uid": uid,
         "scan_id": scan_id,
-        "output_dir": str(output_dir),
+        "output_dir": result["output_dir"],
     }
 
 

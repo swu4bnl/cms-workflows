@@ -1,6 +1,9 @@
 import sys
+import tempfile
 import types
 import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 
 # ---------------------------------------------------------------------------
@@ -10,14 +13,17 @@ import unittest
 prefect_stub = types.ModuleType("prefect")
 
 
-def task(*args, **kwargs):
+def task(func=None, *args, **kwargs):
     def decorator(func):
+        return func
+
+    if callable(func):
         return func
     return decorator
 
 
 def get_run_logger():
-    return None
+    return MagicMock()
 
 
 prefect_stub.task = task
@@ -114,6 +120,45 @@ class CategorizAnchorFailureTests(unittest.TestCase):
         self.assertEqual(
             auto_stitch._categorize_anchor_failure(None),
             "unknown failure",
+        )
+
+
+class RunAutoStitchAnchorTests(unittest.TestCase):
+    def test_calls_python_runner_directly(self):
+        run = types.SimpleNamespace(start={"scan_id": "42"})
+        runner = MagicMock(return_value={"output_dir": "/tmp/stitch-output"})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            (repo_root / "stitch.py").write_text("", encoding="utf-8")
+
+            with patch.object(auto_stitch, "get_run", return_value=run), patch.object(
+                auto_stitch, "_load_stitch_runner", return_value=runner
+            ):
+                result = auto_stitch.run_auto_stitch_anchor(
+                    "uid-123",
+                    api_key="secret",
+                    stitch_config={
+                        "repo_path": str(repo_root),
+                        "max_lookback": 7,
+                        "config_path": "configs/test.json",
+                        "out_dir": "outputs/test",
+                        "tiled_uri": "https://example.invalid",
+                        "catalog_path": "cms/raw",
+                    },
+                )
+
+        runner.assert_called_once_with(
+            anchor_scan=42,
+            max_lookback=7,
+            tiled_uri="https://example.invalid",
+            catalog_path="cms/raw",
+            config_path=str(repo_root / "configs" / "test.json"),
+            out_dir=str(repo_root / "outputs" / "test"),
+        )
+        self.assertEqual(
+            result,
+            {"uid": "uid-123", "scan_id": 42, "output_dir": "/tmp/stitch-output"},
         )
 
 
