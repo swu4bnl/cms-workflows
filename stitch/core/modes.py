@@ -7,9 +7,9 @@ from .config import load_config
 from .errors import MetadataMismatchError, MissingTileError
 
 
-@lru_cache(maxsize=1)
-def _mode_registry() -> Dict[str, Dict[str, List[str]]]:
-    config = load_config()
+@lru_cache(maxsize=None)
+def _mode_registry(config_path: str | None = None) -> Dict[str, Dict[str, List[str]]]:
+    config = load_config(config_path)
     modes = config.get("modes", {})
     tiling_configs = config.get("tiling_configs", {})
     if isinstance(tiling_configs, dict) and tiling_configs:
@@ -22,8 +22,8 @@ def _mode_registry() -> Dict[str, Dict[str, List[str]]]:
     return modes
 
 
-def get_required_labels(mode: str) -> List[str]:
-    registry = _mode_registry()
+def get_required_labels(mode: str, config_path: str | None = None) -> List[str]:
+    registry = _mode_registry(config_path)
     if mode not in registry:
         raise MissingTileError(f"Unsupported tiling mode: {mode}")
 
@@ -35,8 +35,8 @@ def get_required_labels(mode: str) -> List[str]:
     return [str(label) for label in required]
 
 
-def validate_mode_labels(mode: str, labels: List[str]) -> None:
-    required = get_required_labels(mode)
+def validate_mode_labels(mode: str, labels: List[str], config_path: str | None = None) -> None:
+    required = get_required_labels(mode, config_path=config_path)
     missing = [label for label in required if label not in labels]
     if missing:
         raise MissingTileError(

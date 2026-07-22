@@ -28,7 +28,12 @@ def slack(func):
     the flow. To keep the naming of workflows consistent, the name of this inner function had to match the expected name.
     """
 
-    def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
+    def end_of_run_workflow(
+        stop_doc,
+        api_key=None,
+        dry_run=False,
+        workflow_options=None,
+    ):
         flow_run_name = FlowRunContext.get().flow_run.dict().get("name")
 
         # Load slack credentials that are saved in Prefect.
@@ -51,7 +56,12 @@ def slack(func):
             )
 
         try:
-            result = func(stop_doc, api_key=api_key, dry_run=dry_run)
+            result = func(
+                stop_doc,
+                api_key=api_key,
+                dry_run=dry_run,
+                workflow_options=workflow_options,
+            )
 
             # Send a message to mon-prefect-cms if flow-run is successful.
             message = f":white_check_mark: (This is from a test, ignore that if it fails){CATALOG_NAME} flow-run successful. (*{flow_run_name}*)\n ```run_start: {uid}\nscan_id: {scan_id}```"
@@ -84,11 +94,16 @@ def log_completion():
 
 @flow(task_runner=ConcurrentTaskRunner())
 @slack
-def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
+def end_of_run_workflow(
+    stop_doc,
+    api_key=None,
+    dry_run=False,
+    workflow_options=None,
+):
     load_dotenv()
     logger = get_run_logger()
     uid = stop_doc["run_start"]
-    stitch = load_stitch_settings()
+    stitch = load_stitch_settings(workflow_options=workflow_options)
 
     # Launch core tasks concurrently
     linker_task = create_symlinks.submit(uid, api_key=api_key, dry_run=dry_run)

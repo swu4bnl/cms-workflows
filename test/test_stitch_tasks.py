@@ -1,6 +1,8 @@
 import sys
 import types
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 
@@ -41,7 +43,7 @@ import stitch_tasks  # noqa: E402
 # ---------------------------------------------------------------------------
 
 
-class CategorizAnchorFailureTests(unittest.TestCase):
+class CategorizeAnchorFailureTests(unittest.TestCase):
     def test_missing_scan_range(self):
         self.assertEqual(
             stitch_tasks._categorize_anchor_failure("missing scan range in args"),
@@ -161,7 +163,7 @@ class RunAutoStitchAnchorTests(unittest.TestCase):
         )
         self.assertEqual(
             result,
-            {"uid": "uid-123", "scan_id": 42, "output_dir": "/tmp/stitch-output"},
+            {"uid": "uid-123", "scan_id": 42, "output_dir": "/tmp/stitch-output", "plot": False},
         )
 
     def test_uses_experiment_alias_directory_as_default_output_dir(self):
@@ -188,6 +190,52 @@ class RunAutoStitchAnchorTests(unittest.TestCase):
             runner.call_args.kwargs["out_dir"],
             "/nsls2/data/cms/proposals/2026-1/pass-12345/experiments/sample-a",
         )
+
+    def test_returns_plot_flag_from_config(self):
+        run = types.SimpleNamespace(
+            start={
+                "scan_id": "44",
+                "cycle": "2026-1",
+                "data_session": "pass-12345",
+                "experiments_directory": "experiments",
+                "experiment_alias_directory": "sample-a",
+            }
+        )
+        runner = MagicMock(return_value={"output_dir": "/tmp/stitch-output"})
+        stitch_module = types.ModuleType("stitch.runner")
+        stitch_module.run_stitch_validation = runner
+
+        with patch.dict(sys.modules, {"stitch.runner": stitch_module}), patch.object(
+            stitch_tasks, "get_run", return_value=run
+        ):
+            result = stitch_tasks.run_auto_stitch_anchor("uid-789", stitch_config={"stitch_plot": True})
+
+        self.assertTrue(result["plot"])
+
+
+class VerifyStitchOutputsTests(unittest.TestCase):
+    def test_verifies_required_outputs_without_preview_png(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            (output_dir / "validation_index.json").write_text("{}", encoding="utf-8")
+            (output_dir / "stitched.tiff").write_bytes(b"tiff")
+            (output_dir / "stitched.json").write_text("{}", encoding="utf-8")
+
+            result = stitch_tasks.verify_stitch_outputs({"output_dir": str(output_dir), "plot": False})
+
+        self.assertEqual(result["tiff_count"], 1)
+        self.assertEqual(result["sidecar_json_count"], 1)
+        self.assertEqual(result["preview_png_count"], 0)
+
+    def test_requires_preview_png_when_plot_enabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            (output_dir / "validation_index.json").write_text("{}", encoding="utf-8")
+            (output_dir / "stitched.tiff").write_bytes(b"tiff")
+            (output_dir / "stitched.json").write_text("{}", encoding="utf-8")
+
+            with self.assertRaises(FileNotFoundError):
+                stitch_tasks.verify_stitch_outputs({"output_dir": str(output_dir), "plot": True})
 
 
 if __name__ == "__main__":

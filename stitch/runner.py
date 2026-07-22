@@ -279,6 +279,7 @@ def _find_run_by_uid(node: Any, uid: str) -> Any | None:
 def _fetch_anchor_runs(
     tiled_uri: str,
     catalog_path: str,
+    config_path: str,
     anchor_scan: int | None,
     anchor_uid: str | None,
     max_lookback: int,
@@ -312,7 +313,7 @@ def _fetch_anchor_runs(
             "Anchor run is missing required metadata. Need stitch_group_id, stitch_tiling_mode, and scan_id."
         )
 
-    required_labels = get_required_labels(str(mode))
+    required_labels = get_required_labels(str(mode), config_path=config_path)
     max_lookback = max(int(max_lookback), 1)
     lower_scan = int(anchor_scan_id) - max_lookback + 1
 
@@ -391,6 +392,7 @@ def run_stitch_validation(
         runs, resolved_scan_range = _fetch_anchor_runs(
             tiled_uri=tiled_uri,
             catalog_path=catalog_path,
+            config_path=config_path,
             anchor_scan=anchor_scan,
             anchor_uid=anchor_uid,
             max_lookback=max_lookback,

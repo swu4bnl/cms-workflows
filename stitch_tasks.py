@@ -71,7 +71,7 @@ def run_auto_stitch_anchor(uid, api_key=None, stitch_config=None):
     ``out_dir``, ``tiled_uri``, and ``catalog_path``. Relative config paths and
     output-directory overrides are interpreted under ``stitch/``.
 
-    Returns ``{"uid": ..., "scan_id": ..., "output_dir": <absolute path>}``.
+    Returns ``{"uid": ..., "scan_id": ..., "output_dir": <absolute path>, "plot": ...}``.
     """
     from stitch.runner import run_stitch_validation
 
@@ -86,6 +86,7 @@ def run_auto_stitch_anchor(uid, api_key=None, stitch_config=None):
     out_dir = _resolve_stitch_path(config.get("out_dir"), _default_stitch_output_dir(run.start))
     tiled_uri = config.get("tiled_uri")
     catalog_path = config.get("catalog_path")
+    plot = bool(config.get("plot", config.get("stitch_plot", False)))
 
     logger.info(
         "Launching anchor-mode auto-stitch for uid=%s scan_id=%s output_dir=%s",
@@ -115,6 +116,7 @@ def run_auto_stitch_anchor(uid, api_key=None, stitch_config=None):
         "uid": uid,
         "scan_id": scan_id,
         "output_dir": result["output_dir"],
+        "plot": plot,
     }
 
 
@@ -151,9 +153,11 @@ def verify_stitch_outputs(stitch_result):
     if not sidecar_json:
         raise FileNotFoundError(f"No JSON sidecars found under {output_dir}")
 
-preview_png = [p for p in output_dir.rglob("*.png") if "preview" in p.name.lower()]
-if not preview_png:
-    logger.warning("No preview PNGs found under %s", str(output_dir))
+    preview_png = [p for p in output_dir.rglob("*.png") if "preview" in p.name.lower()]
+    if stitch_result.get("plot") and not preview_png:
+        raise FileNotFoundError(f"No preview PNGs found under {output_dir}")
+    if not preview_png:
+        logger.warning("No preview PNGs found under %s", str(output_dir))
 
     can_read = os.access(output_dir, os.R_OK)
     can_write = os.access(output_dir, os.W_OK)

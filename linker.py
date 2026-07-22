@@ -30,7 +30,10 @@ def chmod_and_chown(path, *, uid=None, gid=None, mode=0o775):
 def make_relative_path(path_value):
     """Prevent absolute metadata paths from escaping the proposal directory."""
     path = Path(path_value)
-    return Path(*path.parts[1:]) if path.is_absolute() else path
+    relative_path = Path(*path.parts[1:]) if path.is_absolute() else path
+    if ".." in relative_path.parts:
+        raise ValueError(f"Path must not contain traversal segments: {path_value}")
+    return relative_path
 
 def proposal_directory(doc):
     """Return the proposal directory for a run start document."""

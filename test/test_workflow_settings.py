@@ -91,6 +91,45 @@ class LoadStitchSettingsConfigTests(unittest.TestCase):
             settings = load_stitch_settings()
         self.assertEqual(settings.config, {})
 
+    def test_stitch_config_rejects_malformed_json(self):
+        with patch.dict(os.environ, {"ANCHOR_STITCH_CONFIG": "{"}):
+            with self.assertRaisesRegex(ValueError, "valid JSON"):
+                load_stitch_settings()
+
+    def test_stitch_config_rejects_non_object_json(self):
+        with patch.dict(os.environ, {"ANCHOR_STITCH_CONFIG": "[]"}):
+            with self.assertRaisesRegex(ValueError, "JSON object"):
+                load_stitch_settings()
+
+    def test_workflow_options_override_environment(self):
+        with patch.dict(
+            os.environ,
+            {
+                "ANCHOR_AUTOSTITCH_ENABLED": "false",
+                "ANCHOR_AUTOSTITCH_VERIFY_OUTPUTS": "false",
+                "ANCHOR_STITCH_CONFIG": "{}",
+            },
+        ):
+            settings = load_stitch_settings(
+                workflow_options={
+                    "anchor_autostitch": {
+                        "enabled": True,
+                        "verify_outputs": True,
+                        "config": {"max_lookback": 9},
+                    }
+                },
+            )
+
+        self.assertEqual(settings, StitchSettings(enabled=True, verify_outputs=True, config={"max_lookback": 9}))
+
+    def test_rejects_non_mapping_anchor_options(self):
+        with self.assertRaisesRegex(ValueError, "anchor_autostitch"):
+            load_stitch_settings(workflow_options={"anchor_autostitch": True})
+
+    def test_rejects_non_mapping_workflow_options(self):
+        with self.assertRaisesRegex(ValueError, "workflow_options"):
+            load_stitch_settings(workflow_options=True)
+
 
 if __name__ == "__main__":
     unittest.main()
