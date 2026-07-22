@@ -22,15 +22,8 @@ deployments:
     entrypoint: end_of_run_workflow.py:end_of_run_workflow
     parameters:
       enable_anchor_autostitch: false
-      stitch_repo_path: null
-      max_lookback: 50
-      stitch_config_path: configs/stitching_defaults.json
-      stitch_out_dir: stitching_outputs_prefect
-      stitch_plot: true
-      stitch_show_colorbar: true
-      stitch_tiled_uri: null
-      stitch_catalog_path: null
       verify_anchor_outputs: true
+      stitch_config: null
     schedule: {}
     work_pool:
       job_variables:
