@@ -9,6 +9,7 @@ from prefect.settings import PREFECT_UI_URL
 
 #from analysis import run_analysis
 from data_validation import data_validation_task, get_run
+from export import export
 from linker import create_symlinks
 from dotenv import load_dotenv
 
@@ -93,6 +94,9 @@ def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
 
     validation_task = data_validation_task.submit(uid, api_key=api_key)
     logger.info("Launched validation tasks")
+
+    export(ref=uid, api_key=api_key, subdirs=True, dry_run=dry_run)
+    logger.info("Completed export flow")
 
     # analysis_task = run_analysis(raw_ref=uid)
     # logger.info("Launched analysis task")
