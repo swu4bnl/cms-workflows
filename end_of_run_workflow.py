@@ -8,9 +8,11 @@ from prefect.context import FlowRunContext
 from prefect.settings import PREFECT_UI_URL
 
 #from analysis import run_analysis
+from stitch_tasks import run_auto_stitch_anchor, verify_stitch_outputs
 from data_validation import data_validation_task, get_run
 from linker import create_symlinks
 from dotenv import load_dotenv
+from workflow_settings import load_stitch_settings
 
 CATALOG_NAME = "cms"
 
@@ -26,7 +28,12 @@ def slack(func):
     the flow. To keep the naming of workflows consistent, the name of this inner function had to match the expected name.
     """
 
-    def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
+    def end_of_run_workflow(
+        stop_doc,
+        api_key=None,
+        dry_run=False,
+        workflow_options=None,
+    ):
         flow_run_name = FlowRunContext.get().flow_run.dict().get("name")
 
         # Load slack credentials that are saved in Prefect.
@@ -49,7 +56,12 @@ def slack(func):
             )
 
         try:
-            result = func(stop_doc, api_key=api_key, dry_run=dry_run)
+            result = func(
+                stop_doc,
+                api_key=api_key,
+                dry_run=dry_run,
+                workflow_options=workflow_options,
+            )
 
             # Send a message to mon-prefect-cms if flow-run is successful.
             message = f":white_check_mark: (This is from a test, ignore that if it fails){CATALOG_NAME} flow-run successful. (*{flow_run_name}*)\n ```run_start: {uid}\nscan_id: {scan_id}```"
@@ -82,12 +94,18 @@ def log_completion():
 
 @flow(task_runner=ConcurrentTaskRunner())
 @slack
-def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
+def end_of_run_workflow(
+    stop_doc,
+    api_key=None,
+    dry_run=False,
+    workflow_options=None,
+):
     load_dotenv()
     logger = get_run_logger()
     uid = stop_doc["run_start"]
+    stitch = load_stitch_settings(workflow_options=workflow_options)
 
-    # Launch validation, analysis, and linker tasks concurrently
+    # Launch core tasks concurrently
     linker_task = create_symlinks.submit(uid, api_key=api_key, dry_run=dry_run)
     logger.info("Launched linker task")
 
@@ -97,9 +115,22 @@ def end_of_run_workflow(stop_doc, api_key=None, dry_run=False):
     # analysis_task = run_analysis(raw_ref=uid)
     # logger.info("Launched analysis task")
 
-    # Wait for all tasks to comple
+    pending = [linker_task, validation_task]
+    stitch_task = None
+
+    if stitch.enabled:
+        stitch_task = run_auto_stitch_anchor.submit(uid, api_key=api_key, stitch_config=stitch.config)
+        logger.info("Launched anchor auto-stitch task")
+        pending.append(stitch_task)
+    else:
+        logger.info("Anchor auto-stitch is disabled for this deployment")
+
     logger.info("Waiting for tasks to complete")
-    linker_task.result()
-    validation_task.result()
-    # analysis_task.result()
+    for t in pending:
+        t.result()
+
+    if stitch.enabled and stitch.verify_outputs and stitch_task is not None:
+        stitch_result = stitch_task.result()
+        verify_stitch_outputs.submit(stitch_result).result()
+
     log_completion()
