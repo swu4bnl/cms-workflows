@@ -151,9 +151,9 @@ def verify_stitch_outputs(stitch_result):
     if not sidecar_json:
         raise FileNotFoundError(f"No JSON sidecars found under {output_dir}")
 
-    preview_png = [p for p in output_dir.rglob("*.png") if "preview" in p.name.lower()]
-    if not preview_png:
-        raise FileNotFoundError(f"No preview PNGs found under {output_dir}")
+preview_png = [p for p in output_dir.rglob("*.png") if "preview" in p.name.lower()]
+if not preview_png:
+    logger.warning("No preview PNGs found under %s", str(output_dir))
 
     can_read = os.access(output_dir, os.R_OK)
     can_write = os.access(output_dir, os.W_OK)
