@@ -8,7 +8,7 @@ from prefect.context import FlowRunContext
 from prefect.settings import PREFECT_UI_URL
 
 #from analysis import run_analysis
-from auto_stitch import run_auto_stitch_anchor, verify_stitch_outputs
+from stitch_tasks import run_auto_stitch_anchor, verify_stitch_outputs
 from data_validation import data_validation_task, get_run
 from linker import create_symlinks
 from dotenv import load_dotenv

@@ -5,6 +5,8 @@ import glob
 from data_validation import get_run
 
 
+PROPOSAL_ROOT = Path("/nsls2/data/cms/proposals")
+
 
 def detector_mapping(detector):
     if detector in {"pilatus300k-1", "pilatus800k-2"}:
@@ -26,8 +28,24 @@ def chmod_and_chown(path, *, uid=None, gid=None, mode=0o775):
     #    os.chown(path, uid, gid)
 
 def make_relative_path(path_value):
+    """Prevent absolute metadata paths from escaping the proposal directory."""
     path = Path(path_value)
     return Path(*path.parts[1:]) if path.is_absolute() else path
+
+def proposal_directory(doc):
+    """Return the proposal directory for a run start document."""
+    return PROPOSAL_ROOT / doc["cycle"] / doc["data_session"]
+
+def experiment_directory(doc):
+    """Return the experiments directory inside the proposal directory."""
+    return proposal_directory(doc) / make_relative_path(doc.get("experiments_directory", "experiments"))
+
+def experiment_alias_directory(doc):
+    """Return the user-facing experiment alias directory, or ``None`` if unset."""
+    path_expr_alias = doc.get("experiment_alias_directory")
+    if not path_expr_alias:
+        return None
+    return experiment_directory(doc) / make_relative_path(path_expr_alias)
 
 @task(retries=2, retry_delay_seconds=10)
 def create_symlinks(ref, api_key=None, dry_run=False):
@@ -53,17 +71,15 @@ def create_symlinks(ref, api_key=None, dry_run=False):
             else:
                 logger.info("Skipping the creation of the link because 'filename' is not set.")
                 return
-            if path_expr_alias := doc.get("experiment_alias_directory"):
-                path_proposal = Path(f"/nsls2/data/cms/proposals/{doc['cycle']}/{doc['data_session']}")
+            path_expr_alias = experiment_alias_directory(doc)
+            if path_expr_alias:
                 # stats = path_proposal.stat()
-                experiments_dir = make_relative_path(doc.get("experiments_directory", "experiments"))
-                path_expr = path_proposal / experiments_dir
+                path_expr = experiment_directory(doc)
                 if dry_run:
                     logger.info(f"Dry run: mkdir {path_expr}")
                 else:
                     path_expr.mkdir(exist_ok=True, parents=True)
                 #chmod_and_chown(path_expr, uid=stats.st_uid, gid=stats.st_gid)
-                path_expr_alias = path_expr / make_relative_path(path_expr_alias)
                 if dry_run:
                     logger.info(f"Dry run: mkdir {path_expr_alias}")
                 else:

@@ -1,46 +1,46 @@
 """Prefect tasks for anchor-mode auto-stitching integration.
 
-Follows the same pattern as linker.py and data_validation.py: one module
-per concern, imported by end_of_run_workflow.py for orchestration.
+This module is the workflow-facing adapter. It resolves the completed run,
+chooses the output location used by CMS proposal folders, and calls the core
+stitching code in ``stitch.runner``.
+
+Anchor mode means the Prefect task receives one completed run and treats it as
+the newest tile in a stitch group. The stitch runner then looks backward through
+recent scan IDs to find the other required tile labels for the same
+``stitch_group_id`` and ``stitch_tiling_mode``.
 """
 
 import os
-import importlib.util
-import sys
 from pathlib import Path
 
 from prefect import get_run_logger, task
 
 from data_validation import get_run
+from linker import experiment_alias_directory
 
 
-def _bundled_repo_path() -> Path:
-    return Path(__file__).resolve().parent / "auto_stitch"
+STITCH_PACKAGE_DIR = Path(__file__).resolve().parent / "stitch"
+DEFAULT_STITCH_CONFIG = STITCH_PACKAGE_DIR / "configs" / "stitching_defaults.json"
 
 
-def _resolve_repo_path(repo_root: Path, path_value: str) -> Path:
+def _resolve_stitch_path(path_value, default: Path) -> Path:
+    """Return an absolute path, interpreting relative overrides under ``stitch/``."""
+    path_value = default if path_value in (None, "") else path_value
     path = Path(path_value).expanduser()
-    return path if path.is_absolute() else repo_root / path
+    return path if path.is_absolute() else STITCH_PACKAGE_DIR / path
 
 
-def _load_stitch_runner(repo_root: Path):
-    repo_path = str(repo_root)
-    if repo_path not in sys.path:
-        sys.path.insert(0, repo_path)
-
-    module_path = repo_root / "stitch.py"
-    spec = importlib.util.spec_from_file_location("cms_workflows_stitch", module_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Could not load stitch runner from {module_path}")
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.run_stitch_validation
+def _default_stitch_output_dir(start_doc) -> Path:
+    """Return the proposal experiment alias directory used as the stitch output base."""
+    output_dir = experiment_alias_directory(start_doc)
+    if output_dir is None:
+        raise RuntimeError("Start document is missing experiment_alias_directory; cannot place stitch outputs.")
+    return output_dir
 
 
-def _categorize_anchor_failure(stderr: str) -> str:
-    """Map stitch CLI stderr to a short human-readable failure category."""
-    text = (stderr or "").lower()
+def _categorize_anchor_failure(error_text: str) -> str:
+    """Map stitch errors to a short human-readable failure category."""
+    text = (error_text or "").lower()
     if "missing scan range" in text or "start_scan" in text or "end_scan" in text:
         return "missing scan range"
     if "required tiles" in text or "missing required tiles" in text or "could not find all required tiles" in text:
@@ -58,63 +58,42 @@ def _categorize_anchor_failure(stderr: str) -> str:
 
 @task
 def run_auto_stitch_anchor(uid, api_key=None, stitch_config=None):
-    """Run anchor-mode auto-stitch via the bundled stitch.py CLI adapter.
+    """Run auto-stitch for a completed Bluesky run.
 
-    Parameters
-    ----------
-    uid : str
-        Run UID used to resolve the scan_id from Tiled.
-    api_key : str, optional
-        Tiled API key.
-    stitch_config : dict, optional
-        Optional overrides for stitch behavior. Recognized keys:
+    The selected run is the anchor. Its ``scan_id`` is passed to
+    ``run_stitch_validation(anchor_scan=...)`` so the stitch runner can find the
+    matching tile group in Tiled. Output is written under the same proposal
+    experiment alias directory used by ``linker.create_symlinks``; the stitch
+    config then adds detector and stitch-mode subfolders such as
+    ``maxs/stitched_ygaps``.
 
-        - ``repo_path``: path to the stitch repo root (default: bundled
-          ``auto_stitch/`` directory; env override: ``CMS_AUTO_STITCH_REPO``).
-        - ``max_lookback``: scan lookback window size (default: 50).
-        - ``config_path``: path to stitching config JSON relative to repo root
-          (default: ``configs/stitching_defaults.json``).
-        - ``out_dir``: output directory relative to repo root
-          (default: ``stitching_outputs_prefect``).
-        - ``tiled_uri``: Tiled server URI override.
-        - ``catalog_path``: Tiled catalog path override.
+    ``stitch_config`` may override ``max_lookback``, ``config_path``,
+    ``out_dir``, ``tiled_uri``, and ``catalog_path``. Relative config paths and
+    output-directory overrides are interpreted under ``stitch/``.
 
-    Returns
-    -------
-    dict
-        ``{"uid": ..., "scan_id": ..., "output_dir": <absolute path>}``
+    Returns ``{"uid": ..., "scan_id": ..., "output_dir": <absolute path>}``.
     """
+    from stitch.runner import run_stitch_validation
+
     logger = get_run_logger()
     config = stitch_config or {}
 
     run = get_run(uid, api_key=api_key)
     scan_id = int(run.start["scan_id"])
 
-    bundled_repo = _bundled_repo_path()
-    repo_root = Path(
-        config.get("repo_path") or os.getenv("CMS_AUTO_STITCH_REPO", "") or str(bundled_repo)
-    ).expanduser()
-
-    if not repo_root.exists() or not (repo_root / "stitch.py").exists():
-        raise FileNotFoundError(
-            "Auto-stitch repo is not available. "
-            f"Expected stitch.py under: {repo_root}"
-        )
-
-    max_lookback = int(config.get("max_lookback", 50))
-    config_path = _resolve_repo_path(repo_root, config.get("config_path", "configs/stitching_defaults.json"))
-    out_dir = _resolve_repo_path(repo_root, config.get("out_dir", "stitching_outputs_prefect"))
+    max_lookback = int(config.get("max_lookback", 500))
+    config_path = _resolve_stitch_path(config.get("config_path"), DEFAULT_STITCH_CONFIG)
+    out_dir = _resolve_stitch_path(config.get("out_dir"), _default_stitch_output_dir(run.start))
     tiled_uri = config.get("tiled_uri")
     catalog_path = config.get("catalog_path")
 
     logger.info(
-        "Launching anchor-mode auto-stitch for uid=%s scan_id=%s repo=%s",
+        "Launching anchor-mode auto-stitch for uid=%s scan_id=%s output_dir=%s",
         uid,
         scan_id,
-        str(repo_root),
+        str(out_dir),
     )
 
-    run_stitch_validation = _load_stitch_runner(repo_root)
     try:
         result = run_stitch_validation(
             anchor_scan=scan_id,
