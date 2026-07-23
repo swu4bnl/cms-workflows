@@ -17,6 +17,10 @@ sys.modules.setdefault("tiled.queries", tiled_queries_stub)
 from stitch import runner  # noqa: E402
 
 
+class SearchResult(dict):
+    pass
+
+
 class AnchorRunSelectionTests(unittest.TestCase):
     def test_anchor_mode_selects_matching_repetition_from_block_ordered_tiles(self):
         runs = {
@@ -39,8 +43,9 @@ class AnchorRunSelectionTests(unittest.TestCase):
                 (2440905, "pos2"),
             ]
         }
+        node = types.SimpleNamespace(search=lambda query: SearchResult(runs))
 
-        with patch.object(runner, "_catalog_node", return_value=object()), patch.object(
+        with patch.object(runner, "_catalog_node", return_value=node), patch.object(
             runner, "_find_run_by_scan_id", side_effect=lambda node, scan_id: runs.get(scan_id)
         ), patch.object(runner, "get_required_labels", return_value=["pos1", "pos2"]):
             selected_runs, scan_range = runner._fetch_anchor_runs(
@@ -75,8 +80,9 @@ class AnchorRunSelectionTests(unittest.TestCase):
                 (2440904, "pos2"),
             ]
         }
+        node = types.SimpleNamespace(search=lambda query: SearchResult(runs))
 
-        with patch.object(runner, "_catalog_node", return_value=object()), patch.object(
+        with patch.object(runner, "_catalog_node", return_value=node), patch.object(
             runner, "_find_run_by_scan_id", side_effect=lambda node, scan_id: runs.get(scan_id)
         ), patch.object(runner, "get_required_labels", return_value=["pos1", "pos2"]):
             selected_runs, scan_range = runner._fetch_anchor_runs(
@@ -107,8 +113,9 @@ class AnchorRunSelectionTests(unittest.TestCase):
                 (2440900, "pos1"),
             ]
         }
+        node = types.SimpleNamespace(search=lambda query: SearchResult(runs))
 
-        with patch.object(runner, "_catalog_node", return_value=object()), patch.object(
+        with patch.object(runner, "_catalog_node", return_value=node), patch.object(
             runner, "_find_run_by_scan_id", side_effect=lambda node, scan_id: runs.get(scan_id)
         ), patch.object(runner, "get_required_labels", return_value=["pos1", "pos2"]):
             with self.assertRaisesRegex(RuntimeError, "not the final required tile"):
@@ -120,6 +127,44 @@ class AnchorRunSelectionTests(unittest.TestCase):
                     anchor_uid=None,
                     max_lookback=3,
                 )
+
+    def test_anchor_mode_can_use_scan_id_lookback_search(self):
+        runs = {
+            scan_id: types.SimpleNamespace(
+                start={
+                    "scan_id": scan_id,
+                    "stitch_group_id": "group-a",
+                    "stitch_tiling_mode": "ygaps",
+                    "stitch_tile_label": label,
+                }
+            )
+            for scan_id, label in [
+                (2440898, "pos1"),
+                (2440899, "pos1"),
+                (2440900, "pos1"),
+                (2440901, "pos1"),
+                (2440902, "pos2"),
+                (2440903, "pos2"),
+                (2440904, "pos2"),
+                (2440905, "pos2"),
+            ]
+        }
+
+        with patch.object(runner, "_catalog_node", return_value=object()), patch.object(
+            runner, "_find_run_by_scan_id", side_effect=lambda node, scan_id: runs.get(scan_id)
+        ), patch.object(runner, "get_required_labels", return_value=["pos1", "pos2"]):
+            selected_runs, scan_range = runner._fetch_anchor_runs(
+                tiled_uri="https://example.invalid",
+                catalog_path="cms/raw",
+                config_path="config.json",
+                anchor_scan=2440905,
+                anchor_uid=None,
+                max_lookback=8,
+                anchor_search="scan_id",
+            )
+
+        self.assertEqual([run.start["scan_id"] for run in selected_runs], [2440901, 2440905])
+        self.assertEqual(scan_range, [2440901, 2440905])
 
 
 if __name__ == "__main__":

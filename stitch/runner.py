@@ -283,12 +283,15 @@ def _fetch_anchor_runs(
     anchor_scan: int | None,
     anchor_uid: str | None,
     max_lookback: int,
+    anchor_search: str = "stitch_group_id",
+    logger: Any = None,
 ) -> tuple[List[Any], List[int]]:
-    """Resolve all tiles for one stitch group by walking backward from an anchor run.
+    """Resolve the matching tile set for one anchor run.
 
     The anchor run identifies the target ``stitch_group_id`` and
-    ``stitch_tiling_mode``. The required tile labels come from the configured
-    tiling mode, and each label must be found within ``max_lookback`` scan IDs.
+    ``stitch_tiling_mode``. By default, candidates are searched by
+    ``stitch_group_id``. Set ``anchor_search='scan_id'`` to use the old
+    ``max_lookback`` scan-id window.
     """
     node = _catalog_node(tiled_uri=tiled_uri, catalog_path=catalog_path)
 
@@ -324,21 +327,38 @@ def _fetch_anchor_runs(
     max_lookback = max(int(max_lookback), 1)
     lower_scan = int(anchor_scan_id) - max_lookback + 1
 
-    runs_by_label: Dict[str, List[Any]] = {label: [] for label in required_labels}
-    for scan_id in range(lower_scan, int(anchor_scan_id) + 1):
-        run = _find_run_by_scan_id(node, scan_id)
-        if run is None:
-            continue
+    candidate_runs: List[Any] = []
+    if anchor_search == "scan_id":
+        for scan_id in range(lower_scan, int(anchor_scan_id) + 1):
+            run = _find_run_by_scan_id(node, scan_id)
+            if run is not None:
+                candidate_runs.append(run)
+    elif anchor_search == "stitch_group_id":
+        result = node.search(Key("stitch_group_id") == str(group_id))
+        candidate_runs = [result[key] for key in result]
+    else:
+        raise ValueError("anchor_search must be 'stitch_group_id' or 'scan_id'")
 
+    anchor_sample_name = anchor_start.get("sample_name")
+
+    runs_by_label: Dict[str, List[Any]] = {label: [] for label in required_labels}
+    for run in candidate_runs:
         start = extract_start_doc(run)
         if str(start.get("stitch_group_id")) != str(group_id):
             continue
         if str(start.get("stitch_tiling_mode")) != str(mode):
             continue
+        if anchor_sample_name and start.get("sample_name") != anchor_sample_name:
+            continue
+        if int(start.get("scan_id", 0)) > int(anchor_scan_id):
+            continue
 
         tile_label = str(start.get("stitch_tile_label"))
         if tile_label in required_labels:
             runs_by_label[tile_label].append(run)
+
+    for label in required_labels:
+        runs_by_label[label].sort(key=lambda run: int(extract_start_doc(run).get("scan_id", 0)))
 
     anchor_label_runs = runs_by_label.get(anchor_label, [])
     anchor_run_index = next(
@@ -370,6 +390,20 @@ def _fetch_anchor_runs(
         "Resolved anchor group "
         f"{group_id!r}, mode={mode!r}, labels={required_labels}, scans={scan_ids}"
     )
+    if logger is not None:
+        logger.info(
+            "Anchor search resolved group_id=%s mode=%s method=%s candidates=%s selected_scans=%s",
+            group_id,
+            mode,
+            anchor_search,
+            len(candidate_runs),
+            scan_ids,
+        )
+    else:
+        print(
+            f"Anchor search resolved group_id={group_id} mode={mode} method={anchor_search} "
+            f"candidates={len(candidate_runs)} selected_scans={scan_ids}"
+        )
     return runs, scan_range
 
 
@@ -380,10 +414,12 @@ def run_stitch_validation(
     anchor_scan: int | None = None,
     anchor_uid: str | None = None,
     max_lookback: int = 50,
+    anchor_search: str = "stitch_group_id",
     tiled_uri: str = "https://tiled.nsls2.bnl.gov",
     catalog_path: str = "cms/raw",
     config_path: str | None = None,
     out_dir: str | None = None,
+    logger: Any = None,
 ) -> Dict[str, Any]:
     """Fetch tile runs from Tiled, stitch each detector group, and write outputs.
 
@@ -391,6 +427,9 @@ def run_stitch_validation(
     pass ``anchor_scan`` or ``anchor_uid`` and the function finds the complete
     tile group around that anchor. For manual range validation, callers may
     instead pass a fixed ``start_scan``/``end_scan`` range.
+
+    Anchor mode searches by ``stitch_group_id`` by default. Set
+    ``anchor_search='scan_id'`` to use the older ``max_lookback`` scan-id window.
 
     Output files are written under ``out_dir`` using the configured output rule.
     With the default config, detector folders look like ``maxs/stitched_ygaps``.
@@ -415,6 +454,8 @@ def run_stitch_validation(
             anchor_scan=anchor_scan,
             anchor_uid=anchor_uid,
             max_lookback=max_lookback,
+            anchor_search=anchor_search,
+            logger=logger,
         )
     else:
         if start_scan is None or end_scan is None:
@@ -439,12 +480,25 @@ def run_stitch_validation(
     if not normalized_runs:
         raise RuntimeError("No runs with stitch_group_id found in selected scan range.")
 
+    if logger is not None:
+        logger.info(
+            "Read stitch images: runs=%s normalized_entries=%s",
+            len(runs),
+            len(normalized_runs),
+        )
+    else:
+        print(f"Read stitch images: runs={len(runs)} normalized_entries={len(normalized_runs)}")
+
     normalized_runs = disambiguate_repeated_tile_groups(normalized_runs)
 
     grouped = build_groups_from_tiled_runs(
         normalized_runs,
         image_loader=lambda r: np.asarray(r["image"], dtype=np.float64),
     )
+    if logger is not None:
+        logger.info("Grouped stitch tiles: groups=%s", len(grouped))
+    else:
+        print(f"Grouped stitch tiles: groups={len(grouped)}")
 
     index_payload = {
         "scan_range": resolved_scan_range,
@@ -506,12 +560,37 @@ def run_stitch_validation(
         )
 
         print(f"Stitched group {group_id} with {len(tiles)} tiles -> {image_path}")
+        if logger is not None:
+            logger.info(
+                "Stitched group=%s detector=%s tiles=%s output=%s",
+                group_id,
+                detector_config.get("name"),
+                len(tiles),
+                image_path,
+            )
+        else:
+            print(
+                f"Stitched group={group_id} detector={detector_config.get('name')} "
+                f"tiles={len(tiles)} output={image_path}"
+            )
 
     index_path = os.path.join(out_dir, "validation_index.json")
     with open(index_path, "w", encoding="utf-8") as handle:
         json.dump(index_payload, handle, indent=2)
 
     print(f"Validation complete. Index written to {index_path}")
+    if logger is not None:
+        logger.info(
+            "Stitch validation complete: groups=%s scan_range=%s index=%s",
+            len(grouped),
+            resolved_scan_range,
+            os.path.abspath(index_path),
+        )
+    else:
+        print(
+            f"Stitch validation complete: groups={len(grouped)} scan_range={resolved_scan_range} "
+            f"index={os.path.abspath(index_path)}"
+        )
     return {
         "output_dir": os.path.abspath(out_dir),
         "index_path": os.path.abspath(index_path),

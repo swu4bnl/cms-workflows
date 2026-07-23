@@ -3,7 +3,7 @@ import types
 import unittest
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 
 # ---------------------------------------------------------------------------
@@ -156,10 +156,12 @@ class RunAutoStitchAnchorTests(unittest.TestCase):
         runner.assert_called_once_with(
             anchor_scan=42,
             max_lookback=7,
+            anchor_search="stitch_group_id",
             tiled_uri="https://example.invalid",
             catalog_path="cms/raw",
             config_path=str(stitch_tasks.STITCH_PACKAGE_DIR / "configs" / "test.json"),
             out_dir=str(stitch_tasks.STITCH_PACKAGE_DIR / "outputs" / "test"),
+            logger=ANY,
         )
         self.assertEqual(
             result,

@@ -69,9 +69,9 @@ def run_auto_stitch_anchor(uid, api_key=None, stitch_config=None):
     config then adds detector and stitch-mode subfolders such as
     ``maxs/stitched_ygaps``.
 
-    ``stitch_config`` may override ``max_lookback``, ``config_path``,
-    ``out_dir``, ``tiled_uri``, and ``catalog_path``. Relative config paths and
-    output-directory overrides are interpreted under ``stitch/``.
+    ``stitch_config`` may override ``anchor_search``, ``max_lookback``,
+    ``config_path``, ``out_dir``, ``tiled_uri``, and ``catalog_path``. Relative
+    config paths and output-directory overrides are interpreted under ``stitch/``.
 
     Returns ``{"uid": ..., "scan_id": ..., "output_dir": <absolute path>, "plot": ...}``.
     """
@@ -84,6 +84,7 @@ def run_auto_stitch_anchor(uid, api_key=None, stitch_config=None):
     scan_id = int(run.start["scan_id"])
 
     max_lookback = int(config.get("max_lookback", 500))
+    anchor_search = config.get("anchor_search", "stitch_group_id")
     config_path = _resolve_stitch_path(config.get("config_path"), DEFAULT_STITCH_CONFIG)
     out_dir = _resolve_stitch_path(config.get("out_dir"), _default_stitch_output_dir(run.start))
     tiled_uri = config.get("tiled_uri")
@@ -101,10 +102,12 @@ def run_auto_stitch_anchor(uid, api_key=None, stitch_config=None):
         result = run_stitch_validation(
             anchor_scan=scan_id,
             max_lookback=max_lookback,
+            anchor_search=anchor_search,
             tiled_uri=tiled_uri or "https://tiled.nsls2.bnl.gov",
             catalog_path=catalog_path or "cms/raw",
             config_path=str(config_path),
             out_dir=str(out_dir),
+            logger=logger,
         )
     except Exception as exc:
         category = _categorize_anchor_failure(str(exc))
