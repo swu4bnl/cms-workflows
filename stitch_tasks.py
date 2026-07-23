@@ -108,6 +108,16 @@ def run_auto_stitch_anchor(uid, api_key=None, stitch_config=None):
         )
     except Exception as exc:
         category = _categorize_anchor_failure(str(exc))
+        if category == "incomplete groups":
+            logger.info("Skipping anchor auto-stitch for scan_id=%s because the stitch group is incomplete", scan_id)
+            return {
+                "uid": uid,
+                "scan_id": scan_id,
+                "skipped": True,
+                "reason": category,
+                "output_dir": None,
+                "plot": plot,
+            }
         raise RuntimeError(
             f"Anchor auto-stitch failed for scan_id={scan_id} "
             f"(category={category})"

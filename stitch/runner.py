@@ -314,11 +314,18 @@ def _fetch_anchor_runs(
         )
 
     required_labels = get_required_labels(str(mode), config_path=config_path)
+    anchor_label = str(anchor_start.get("stitch_tile_label"))
+    if anchor_label != required_labels[-1]:
+        raise RuntimeError(
+            f"Could not find all required tiles for mode={mode!r} from anchor scan {anchor_scan_id}. "
+            f"Anchor label {anchor_label!r} is not the final required tile {required_labels[-1]!r}."
+        )
+
     max_lookback = max(int(max_lookback), 1)
     lower_scan = int(anchor_scan_id) - max_lookback + 1
 
-    found_by_label: Dict[str, Any] = {}
-    for scan_id in range(int(anchor_scan_id), lower_scan - 1, -1):
+    runs_by_label: Dict[str, List[Any]] = {label: [] for label in required_labels}
+    for scan_id in range(lower_scan, int(anchor_scan_id) + 1):
         run = _find_run_by_scan_id(node, scan_id)
         if run is None:
             continue
@@ -330,20 +337,32 @@ def _fetch_anchor_runs(
             continue
 
         tile_label = str(start.get("stitch_tile_label"))
-        if tile_label in required_labels and tile_label not in found_by_label:
-            found_by_label[tile_label] = run
-            if len(found_by_label) == len(required_labels):
-                break
+        if tile_label in required_labels:
+            runs_by_label[tile_label].append(run)
 
-    missing_labels = [label for label in required_labels if label not in found_by_label]
+    anchor_label_runs = runs_by_label.get(anchor_label, [])
+    anchor_run_index = next(
+        (
+            index
+            for index, run in enumerate(anchor_label_runs)
+            if int(extract_start_doc(run).get("scan_id")) == int(anchor_scan_id)
+        ),
+        None,
+    )
+    if anchor_run_index is None:
+        raise RuntimeError(
+            f"Anchor scan {anchor_scan_id} has tile label {anchor_label!r}, "
+            f"which is not required for mode={mode!r}. Required labels: {required_labels}."
+        )
+
+    missing_labels = [label for label in required_labels if len(runs_by_label[label]) <= anchor_run_index]
     if missing_labels:
         raise RuntimeError(
             f"Could not find all required tiles for mode={mode!r} from anchor scan {anchor_scan_id}. "
             f"Missing labels: {missing_labels}. Lookback window: {max_lookback} scans."
         )
 
-    runs = list(found_by_label.values())
-    runs.sort(key=lambda run: int(extract_start_doc(run).get("scan_id", 0)))
+    runs = [runs_by_label[label][anchor_run_index] for label in required_labels]
     scan_ids = [int(extract_start_doc(run).get("scan_id")) for run in runs]
     scan_range = [min(scan_ids), max(scan_ids)]
 

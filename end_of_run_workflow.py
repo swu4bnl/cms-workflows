@@ -139,6 +139,7 @@ def end_of_run_workflow(
 
     if stitch.enabled and stitch.verify_outputs and stitch_task is not None:
         stitch_result = stitch_task.result()
-        verify_stitch_outputs.submit(stitch_result).result()
+        if not stitch_result.get("skipped"):
+            verify_stitch_outputs.submit(stitch_result).result()
 
     log_completion()
