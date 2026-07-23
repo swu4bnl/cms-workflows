@@ -23,7 +23,7 @@ deployments:
     parameters:
       workflow_options:
         anchor_autostitch:
-          enabled: false
+          enabled: true
           verify_outputs: true
           config: null
     schedule: {}
