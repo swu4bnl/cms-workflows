@@ -3,7 +3,19 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from stitch.core.config import load_config
 from stitch.core import modes
+
+
+class ConfigMaskPathTests(unittest.TestCase):
+    def test_default_mask_paths_resolve_to_existing_files(self):
+        config = load_config()
+        detector_configs = config["detector"]["image_streams"]
+
+        for detector_config in detector_configs:
+            mask_path = Path(detector_config["mask_path"])
+            self.assertTrue(mask_path.is_absolute())
+            self.assertTrue(mask_path.is_file())
 
 
 class ModeRegistryConfigPathTests(unittest.TestCase):

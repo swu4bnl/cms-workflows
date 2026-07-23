@@ -75,13 +75,17 @@ def slack(func):
             tb = traceback.format_exception_only(e)
 
             # Send a message to mon-prefect-cms, mon-prefect if flow-run failed.
-            message = f":bangbang: {CATALOG_NAME} flow-run failed. (*{flow_run_name}*)\n ```run_start: {uid}\nscan_id: {scan_id}``` ```{tb[-1]}```"
+            message = (
+                f"(This is from a test, ignore that if it fails)\n"
+                + f":bangbang: {CATALOG_NAME} flow-run failed. (*{flow_run_name}*)\n ```run_start: {uid}\nscan_id: {scan_id}``` ```{tb[-1]}```"
+            )
             mon_prefect.notify(message)
             mon_prefect_cms.notify(message)
             flow_run = FlowRunContext.get().flow_run
             # Add link to flow-run for the message to mon-prefect-cs.
             program_message = (
-                f":bangbang: {CATALOG_NAME} flow-run failed. <{PREFECT_UI_URL.value()}/flow-runs/"
+                f"(This is from a test, ignore that if it fails)\n"
+                + f":bangbang: {CATALOG_NAME} flow-run failed. <{PREFECT_UI_URL.value()}/flow-runs/"
                 + f"flow-run/{flow_run.id}|the flow run link> (*{flow_run_name}*)\n ```run_start: {uid}\nscan_id: {scan_id}``` ```{tb[-1]}```"
             )
             mon_prefect_cs.notify(program_message)

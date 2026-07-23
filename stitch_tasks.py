@@ -47,6 +47,8 @@ def _categorize_anchor_failure(error_text: str) -> str:
         return "incomplete groups"
     if "image_key" in text and "not found" in text:
         return "missing detector image key"
+    if "mask file not found" in text or "missingmaskerror" in text:
+        return "missing mask file"
     if "tiled" in text and ("connect" in text or "auth" in text or "catalog" in text or "not found" in text):
         return "Tiled access failure"
     if "permission" in text or "access is denied" in text or "operation not permitted" in text:
