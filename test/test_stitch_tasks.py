@@ -74,6 +74,14 @@ class CategorizeAnchorFailureTests(unittest.TestCase):
             "incomplete groups",
         )
 
+    def test_not_stitch_scan_missing_required_metadata(self):
+        self.assertEqual(
+            stitch_tasks._categorize_anchor_failure(
+                "Anchor run is missing required metadata. Need stitch_group_id, stitch_tiling_mode, and scan_id."
+            ),
+            "not stitch scan",
+        )
+
     def test_missing_detector_image_key(self):
         self.assertEqual(
             stitch_tasks._categorize_anchor_failure("image_key 'pilatus2m-1_image' not found in primary stream"),
@@ -218,6 +226,36 @@ class RunAutoStitchAnchorTests(unittest.TestCase):
             result = stitch_tasks.run_auto_stitch_anchor("uid-789", stitch_config={"stitch_plot": True})
 
         self.assertTrue(result["plot"])
+
+    def test_skips_non_stitch_scan_when_anchor_metadata_is_missing(self):
+        run = types.SimpleNamespace(
+            start={
+                "scan_id": "45",
+                "cycle": "2026-1",
+                "data_session": "pass-12345",
+                "experiments_directory": "experiments",
+                "experiment_alias_directory": "sample-a",
+            }
+        )
+
+        def _raise_missing_metadata(**kwargs):
+            raise RuntimeError(
+                "Anchor run is missing required metadata. Need stitch_group_id, stitch_tiling_mode, and scan_id."
+            )
+
+        stitch_module = types.ModuleType("stitch.runner")
+        stitch_module.run_stitch_validation = _raise_missing_metadata
+
+        with patch.dict(sys.modules, {"stitch.runner": stitch_module}), patch.object(
+            stitch_tasks, "get_run", return_value=run
+        ):
+            result = stitch_tasks.run_auto_stitch_anchor("uid-metadata-missing")
+
+        self.assertEqual(result["uid"], "uid-metadata-missing")
+        self.assertEqual(result["scan_id"], 45)
+        self.assertTrue(result["skipped"])
+        self.assertEqual(result["reason"], "not stitch scan")
+        self.assertIsNone(result["output_dir"])
 
 
 class VerifyStitchOutputsTests(unittest.TestCase):

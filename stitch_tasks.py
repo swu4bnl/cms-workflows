@@ -41,6 +41,8 @@ def _default_stitch_output_dir(start_doc) -> Path:
 def _categorize_anchor_failure(error_text: str) -> str:
     """Map stitch errors to a short human-readable failure category."""
     text = (error_text or "").lower()
+    if "missing required metadata" in text or "stitch_group_id" in text or "stitch_tiling_mode" in text:
+        return "not stitch scan"
     if "missing scan range" in text or "start_scan" in text or "end_scan" in text:
         return "missing scan range"
     if "required tiles" in text or "missing required tiles" in text or "could not find all required tiles" in text:
@@ -111,8 +113,8 @@ def run_auto_stitch_anchor(uid, api_key=None, stitch_config=None):
         )
     except Exception as exc:
         category = _categorize_anchor_failure(str(exc))
-        if category == "incomplete groups":
-            logger.info("Skipping anchor auto-stitch for scan_id=%s because the stitch group is incomplete", scan_id)
+        if category in ("incomplete groups", "not stitch scan"):
+            logger.info("Skipping anchor auto-stitch for scan_id=%s because %s", scan_id, category)
             return {
                 "uid": uid,
                 "scan_id": scan_id,
