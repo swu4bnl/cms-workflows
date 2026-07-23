@@ -92,6 +92,12 @@ class CategorizeAnchorFailureTests(unittest.TestCase):
             "Tiled access failure",
         )
 
+    def test_tiled_read_timeout(self):
+        self.assertEqual(
+            stitch_tasks._categorize_anchor_failure("httpx.ReadTimeout: The read operation timed out"),
+            "Tiled access failure",
+        )
+
     def test_output_permission_failure(self):
         self.assertEqual(
             stitch_tasks._categorize_anchor_failure("permission denied: /nsls2/data/outputs"),
@@ -156,7 +162,6 @@ class RunAutoStitchAnchorTests(unittest.TestCase):
         runner.assert_called_once_with(
             anchor_scan=42,
             max_lookback=7,
-            anchor_search="stitch_group_id",
             tiled_uri="https://example.invalid",
             catalog_path="cms/raw",
             config_path=str(stitch_tasks.STITCH_PACKAGE_DIR / "configs" / "test.json"),

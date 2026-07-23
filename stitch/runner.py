@@ -283,14 +283,12 @@ def _fetch_anchor_runs(
     anchor_scan: int | None,
     anchor_uid: str | None,
     max_lookback: int,
-    anchor_search: str = "stitch_group_id",
     logger: Any = None,
 ) -> tuple[List[Any], List[int]]:
-    """Resolve the matching tile set for one anchor run.
+    """Resolve the matching tile set for one anchor run by scanning backward.
 
     The anchor run identifies the target ``stitch_group_id`` and
-    ``stitch_tiling_mode``. By default, candidates are searched by
-    ``stitch_group_id``. Set ``anchor_search='scan_id'`` to use the old
+    ``stitch_tiling_mode``. Candidate runs are searched within the
     ``max_lookback`` scan-id window.
     """
     node = _catalog_node(tiled_uri=tiled_uri, catalog_path=catalog_path)
@@ -328,16 +326,10 @@ def _fetch_anchor_runs(
     lower_scan = int(anchor_scan_id) - max_lookback + 1
 
     candidate_runs: List[Any] = []
-    if anchor_search == "scan_id":
-        for scan_id in range(lower_scan, int(anchor_scan_id) + 1):
-            run = _find_run_by_scan_id(node, scan_id)
-            if run is not None:
-                candidate_runs.append(run)
-    elif anchor_search == "stitch_group_id":
-        result = node.search(Key("stitch_group_id") == str(group_id))
-        candidate_runs = [result[key] for key in result]
-    else:
-        raise ValueError("anchor_search must be 'stitch_group_id' or 'scan_id'")
+    for scan_id in range(lower_scan, int(anchor_scan_id) + 1):
+        run = _find_run_by_scan_id(node, scan_id)
+        if run is not None:
+            candidate_runs.append(run)
 
     anchor_sample_name = anchor_start.get("sample_name")
 
@@ -392,16 +384,16 @@ def _fetch_anchor_runs(
     )
     if logger is not None:
         logger.info(
-            "Anchor search resolved group_id=%s mode=%s method=%s candidates=%s selected_scans=%s",
+            "Anchor search resolved group_id=%s mode=%s max_lookback=%s candidates=%s selected_scans=%s",
             group_id,
             mode,
-            anchor_search,
+            max_lookback,
             len(candidate_runs),
             scan_ids,
         )
     else:
         print(
-            f"Anchor search resolved group_id={group_id} mode={mode} method={anchor_search} "
+            f"Anchor search resolved group_id={group_id} mode={mode} max_lookback={max_lookback} "
             f"candidates={len(candidate_runs)} selected_scans={scan_ids}"
         )
     return runs, scan_range
@@ -414,7 +406,6 @@ def run_stitch_validation(
     anchor_scan: int | None = None,
     anchor_uid: str | None = None,
     max_lookback: int = 50,
-    anchor_search: str = "stitch_group_id",
     tiled_uri: str = "https://tiled.nsls2.bnl.gov",
     catalog_path: str = "cms/raw",
     config_path: str | None = None,
@@ -428,8 +419,7 @@ def run_stitch_validation(
     tile group around that anchor. For manual range validation, callers may
     instead pass a fixed ``start_scan``/``end_scan`` range.
 
-    Anchor mode searches by ``stitch_group_id`` by default. Set
-    ``anchor_search='scan_id'`` to use the older ``max_lookback`` scan-id window.
+    Anchor mode searches backward through the ``max_lookback`` scan-id window.
 
     Output files are written under ``out_dir`` using the configured output rule.
     With the default config, detector folders look like ``maxs/stitched_ygaps``.
@@ -454,7 +444,6 @@ def run_stitch_validation(
             anchor_scan=anchor_scan,
             anchor_uid=anchor_uid,
             max_lookback=max_lookback,
-            anchor_search=anchor_search,
             logger=logger,
         )
     else:
