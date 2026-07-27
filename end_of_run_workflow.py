@@ -45,7 +45,9 @@ def slack(func):
         dry_run=False,
         workflow_options=None,
     ):
-        flow_run_name = FlowRunContext.get().flow_run.dict().get("name")
+        flow_run = FlowRunContext.get().flow_run
+        flow_run_name = flow_run.dict().get("name")
+        flow_run_link = f"{PREFECT_UI_URL.value()}/flow-runs/{flow_run.id}"
 
         # Load slack credentials that are saved in Prefect.
         mon_prefect = SlackWebhook.load("mon-prefect")
@@ -83,7 +85,7 @@ def slack(func):
             # Send a message to mon-prefect-cms if flow-run is successful.
             message = (
                 f":white_check_mark: {CATALOG_NAME} flow-run successful. (*{flow_run_name}*)\n"
-                f"<{PREFECT_UI_URL.value()}/flow-runs/{flow_run_name}|View flow run>\n"
+                f"<{flow_run_link}|View flow run>\n"
                 f"```run_start: {uid}\nscan_id: {scan_id}```"
             )
             mon_prefect_cms.notify(message)
@@ -99,11 +101,10 @@ def slack(func):
             )
             mon_prefect.notify(message)
             mon_prefect_cms.notify(message)
-            flow_run = FlowRunContext.get().flow_run
             # Add link to flow-run for the message to mon-prefect-cs.
             program_message = (
                 f":bangbang: {CATALOG_NAME} flow-run failed.\n"
-                f"<{PREFECT_UI_URL.value()}/flow-runs/flow-run/{flow_run.id}|the flow run link> (*{flow_run_name}*)\n"
+                f"<{flow_run_link}|the flow run link> (*{flow_run_name}*)\n"
                 f"```run_start: {uid}\nscan_id: {scan_id}```\n"
                 f"```{tb[-1]}```"
             )
