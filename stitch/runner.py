@@ -276,6 +276,70 @@ def _find_run_by_uid(node: Any, uid: str) -> Any | None:
     return result[key]
 
 
+def _find_runs_by_group_id(node: Any, group_id: str) -> List[Any]:
+    result = node.search(Key("stitch_group_id") == str(group_id))
+    if len(result) < 1:
+        return []
+
+    return [result[key] for key in result]
+
+
+def _select_anchor_runs_from_candidates(
+    candidate_runs: List[Any],
+    *,
+    group_id: str,
+    mode: str,
+    required_labels: List[str],
+    anchor_label: str,
+    anchor_scan_id: int,
+    anchor_sample_name: Any,
+) -> tuple[List[Any], List[int]]:
+    runs_by_label: Dict[str, List[Any]] = {label: [] for label in required_labels}
+    for run in candidate_runs:
+        start = extract_start_doc(run)
+        if str(start.get("stitch_group_id")) != str(group_id):
+            continue
+        if str(start.get("stitch_tiling_mode")) != str(mode):
+            continue
+        if anchor_sample_name and start.get("sample_name") != anchor_sample_name:
+            continue
+        if int(start.get("scan_id", 0)) > int(anchor_scan_id):
+            continue
+
+        tile_label = str(start.get("stitch_tile_label"))
+        if tile_label in required_labels:
+            runs_by_label[tile_label].append(run)
+
+    for label in required_labels:
+        runs_by_label[label].sort(key=lambda run: int(extract_start_doc(run).get("scan_id", 0)))
+
+    anchor_label_runs = runs_by_label.get(anchor_label, [])
+    anchor_run_index = next(
+        (
+            index
+            for index, run in enumerate(anchor_label_runs)
+            if int(extract_start_doc(run).get("scan_id")) == int(anchor_scan_id)
+        ),
+        None,
+    )
+    if anchor_run_index is None:
+        raise RuntimeError(
+            f"Anchor scan {anchor_scan_id} has tile label {anchor_label!r}, "
+            f"which is not required for mode={mode!r}. Required labels: {required_labels}."
+        )
+
+    missing_labels = [label for label in required_labels if len(runs_by_label[label]) <= anchor_run_index]
+    if missing_labels:
+        raise RuntimeError(
+            f"Could not find all required tiles for mode={mode!r} from anchor scan {anchor_scan_id}. "
+            f"Missing labels: {missing_labels}."
+        )
+
+    runs = [runs_by_label[label][anchor_run_index] for label in required_labels]
+    scan_ids = [int(extract_start_doc(run).get("scan_id")) for run in runs]
+    return runs, [min(scan_ids), max(scan_ids)]
+
+
 def _fetch_anchor_runs(
     tiled_uri: str,
     catalog_path: str,
@@ -322,16 +386,60 @@ def _fetch_anchor_runs(
             f"Anchor label {anchor_label!r} is not the final required tile {required_labels[-1]!r}."
         )
 
+    anchor_sample_name = anchor_start.get("sample_name")
+
+    candidate_runs = _find_runs_by_group_id(node, str(group_id))
+    if candidate_runs:
+        try:
+            runs, scan_range = _select_anchor_runs_from_candidates(
+                candidate_runs,
+                group_id=str(group_id),
+                mode=str(mode),
+                required_labels=required_labels,
+                anchor_label=anchor_label,
+                anchor_scan_id=int(anchor_scan_id),
+                anchor_sample_name=anchor_sample_name,
+            )
+            print(
+                "Resolved anchor group "
+                f"{group_id!r}, mode={mode!r}, labels={required_labels}, scans={scan_range} "
+                f"via stitch_group_id search"
+            )
+            if logger is not None:
+                logger.info(
+                    "Anchor search resolved group_id=%s mode=%s method=group_search candidates=%s selected_scans=%s",
+                    group_id,
+                    mode,
+                    len(candidate_runs),
+                    scan_range,
+                )
+            else:
+                print(
+                    f"Anchor search resolved group_id={group_id} mode={mode} method=group_search "
+                    f"candidates={len(candidate_runs)} selected_scans={scan_range}"
+                )
+            return runs, scan_range
+        except Exception as exc:
+            if logger is not None:
+                logger.info(
+                    "Group-id anchor search fell back to lookback for group_id=%s mode=%s reason=%s",
+                    group_id,
+                    mode,
+                    exc,
+                )
+            else:
+                print(
+                    f"Group-id anchor search fell back to lookback for group_id={group_id} mode={mode} reason={exc}"
+                )
+
     max_lookback = max(int(max_lookback), 1)
     lower_scan = int(anchor_scan_id) - max_lookback + 1
 
-    candidate_runs: List[Any] = []
+    candidate_runs = []
     for scan_id in range(lower_scan, int(anchor_scan_id) + 1):
         run = _find_run_by_scan_id(node, scan_id)
         if run is not None:
             candidate_runs.append(run)
-
-    anchor_sample_name = anchor_start.get("sample_name")
 
     runs_by_label: Dict[str, List[Any]] = {label: [] for label in required_labels}
     for run in candidate_runs:
