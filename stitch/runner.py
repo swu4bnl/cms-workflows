@@ -388,9 +388,9 @@ def _fetch_anchor_runs(
 
     anchor_sample_name = anchor_start.get("sample_name")
 
-    candidate_runs = _find_runs_by_group_id(node, str(group_id))
-    if candidate_runs:
-        try:
+    try:
+        candidate_runs = _find_runs_by_group_id(node, str(group_id))
+        if candidate_runs:
             runs, scan_range = _select_anchor_runs_from_candidates(
                 candidate_runs,
                 group_id=str(group_id),
@@ -419,18 +419,18 @@ def _fetch_anchor_runs(
                     f"candidates={len(candidate_runs)} selected_scans={scan_range}"
                 )
             return runs, scan_range
-        except Exception as exc:
-            if logger is not None:
-                logger.info(
-                    "Group-id anchor search fell back to lookback for group_id=%s mode=%s reason=%s",
-                    group_id,
-                    mode,
-                    exc,
-                )
-            else:
-                print(
-                    f"Group-id anchor search fell back to lookback for group_id={group_id} mode={mode} reason={exc}"
-                )
+    except Exception as exc:
+        if logger is not None:
+            logger.info(
+                "Group-id anchor search fell back to lookback for group_id=%s mode=%s reason=%s",
+                group_id,
+                mode,
+                exc,
+            )
+        else:
+            print(
+                f"Group-id anchor search fell back to lookback for group_id={group_id} mode={mode} reason={exc}"
+            )
 
     max_lookback = max(int(max_lookback), 1)
     lower_scan = int(anchor_scan_id) - max_lookback + 1
