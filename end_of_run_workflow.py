@@ -17,6 +17,17 @@ from workflow_settings import load_stitch_settings
 CATALOG_NAME = "cms"
 
 
+def _slack_run_message(title: str, flow_run_name: str, uid: str, scan_id: int, details: str | None = None) -> str:
+    lines = [
+        f"{title} (*{flow_run_name}*)",
+        f"run_start: {uid}",
+        f"scan_id: {scan_id}",
+    ]
+    if details:
+        lines.append(details)
+    return "\n".join(lines)
+
+
 def slack(func):
     """
     Send a message to mon-prefect and mon-prefect-cs slack channels if the flow-run failed.
@@ -52,7 +63,13 @@ def slack(func):
         # Send a message to mon-bluesky if bluesky-run failed.
         if stop_doc.get("exit_status") == "fail":
             mon_bluesky.notify(
-                f":bangbang: {CATALOG_NAME} bluesky-run failed. (*{flow_run_name}*)\n ```run_start: {uid}\nscan_id: {scan_id}``` ```reason: {stop_doc.get('reason', 'none')}```"
+                _slack_run_message(
+                    f":bangbang: {CATALOG_NAME} bluesky-run failed.",
+                    flow_run_name,
+                    uid,
+                    scan_id,
+                    details=f"reason: {stop_doc.get('reason', 'none')}",
+                )
             )
 
         try:
@@ -65,10 +82,10 @@ def slack(func):
 
             # Send a message to mon-prefect-cms if flow-run is successful.
             message = (
-                f":white_check_mark: (This is from a test, ignore that if it fails)\n"
-                + f"<{PREFECT_UI_URL.value()}/flow-runs/{flow_run_name}|{CATALOG_NAME} \n"
-                + f"[Debug Mode]flow-run successful. (*{flow_run_name}*)>\n ```run_start: {uid}\nscan_id: {scan_id}```"
-            )       
+                f":white_check_mark: {CATALOG_NAME} flow-run successful. (*{flow_run_name}*)\n"
+                f"<{PREFECT_UI_URL.value()}/flow-runs/{flow_run_name}|View flow run>\n"
+                f"```run_start: {uid}\nscan_id: {scan_id}```"
+            )
             mon_prefect_cms.notify(message)
             return result
         except Exception as e:
@@ -76,17 +93,19 @@ def slack(func):
 
             # Send a message to mon-prefect-cms, mon-prefect if flow-run failed.
             message = (
-                f"(This is from a test, ignore that if it fails)\n"
-                + f":bangbang: {CATALOG_NAME} flow-run failed. (*{flow_run_name}*)\n ```run_start: {uid}\nscan_id: {scan_id}``` ```{tb[-1]}```"
+                f":bangbang: {CATALOG_NAME} flow-run failed. (*{flow_run_name}*)\n"
+                f"```run_start: {uid}\nscan_id: {scan_id}```\n"
+                f"```{tb[-1]}```"
             )
             mon_prefect.notify(message)
             mon_prefect_cms.notify(message)
             flow_run = FlowRunContext.get().flow_run
             # Add link to flow-run for the message to mon-prefect-cs.
             program_message = (
-                f"(This is from a test, ignore that if it fails)\n"
-                + f":bangbang: {CATALOG_NAME} flow-run failed. <{PREFECT_UI_URL.value()}/flow-runs/"
-                + f"flow-run/{flow_run.id}|the flow run link> (*{flow_run_name}*)\n ```run_start: {uid}\nscan_id: {scan_id}``` ```{tb[-1]}```"
+                f":bangbang: {CATALOG_NAME} flow-run failed.\n"
+                f"<{PREFECT_UI_URL.value()}/flow-runs/flow-run/{flow_run.id}|the flow run link> (*{flow_run_name}*)\n"
+                f"```run_start: {uid}\nscan_id: {scan_id}```\n"
+                f"```{tb[-1]}```"
             )
             mon_prefect_cs.notify(program_message)
             raise
