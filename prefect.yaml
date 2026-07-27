@@ -25,7 +25,9 @@ deployments:
         anchor_autostitch:
           enabled: true
           verify_outputs: true
-          config: null
+          config: 
+            catalog_path: cms/migration
+            max_lookback: 500
     schedule: {}
     work_pool:
       job_variables:
