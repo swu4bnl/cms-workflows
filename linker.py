@@ -5,6 +5,8 @@ import glob
 from data_validation import get_run
 
 
+PROPOSAL_ROOT = Path("/nsls2/data/cms/proposals")
+
 
 def detector_mapping(detector):
     if detector in {"pilatus300k-1", "pilatus800k-2"}:
@@ -25,6 +27,29 @@ def chmod_and_chown(path, *, uid=None, gid=None, mode=0o775):
     #if uid is not None and gid is not None:
     #    os.chown(path, uid, gid)
 
+def make_relative_path(path_value):
+    """Prevent absolute metadata paths from escaping the proposal directory."""
+    path = Path(path_value)
+    relative_path = Path(*path.parts[1:]) if path.is_absolute() else path
+    if ".." in relative_path.parts:
+        raise ValueError(f"Path must not contain traversal segments: {path_value}")
+    return relative_path
+
+def proposal_directory(doc):
+    """Return the proposal directory for a run start document."""
+    return PROPOSAL_ROOT / doc["cycle"] / doc["data_session"]
+
+def experiment_directory(doc):
+    """Return the experiments directory inside the proposal directory."""
+    return proposal_directory(doc) / make_relative_path(doc.get("experiments_directory", "experiments"))
+
+def experiment_alias_directory(doc):
+    """Return the user-facing experiment alias directory, or ``None`` if unset."""
+    path_expr_alias = doc.get("experiment_alias_directory")
+    if not path_expr_alias:
+        return None
+    return experiment_directory(doc) / make_relative_path(path_expr_alias)
+
 @task(retries=2, retry_delay_seconds=10)
 def create_symlinks(ref, api_key=None, dry_run=False):
     """
@@ -39,10 +64,6 @@ def create_symlinks(ref, api_key=None, dry_run=False):
     hrf = get_run(ref, api_key=api_key)
     for name, doc in hrf.documents():
         if name == "start":
-            if doc.get('experiment_project'):
-                # NOTE: shortcut for the workflow before data security; to be removed later
-                logger.info("Skipping the creation of the link because 'experiment_project' is set.")
-                return
             if detectors := doc.get("detectors"):
                 pass
             else:
@@ -53,16 +74,15 @@ def create_symlinks(ref, api_key=None, dry_run=False):
             else:
                 logger.info("Skipping the creation of the link because 'filename' is not set.")
                 return
-            if path_expr_alias := doc.get("experiment_alias_directory"):
-                path_proposal = Path(f"/nsls2/data/cms/proposals/{doc['cycle']}/{doc['data_session']}")
+            path_expr_alias = experiment_alias_directory(doc)
+            if path_expr_alias:
                 # stats = path_proposal.stat()
-                path_expr = path_proposal / "experiments"   # experiments directory
+                path_expr = experiment_directory(doc)
                 if dry_run:
                     logger.info(f"Dry run: mkdir {path_expr}")
                 else:
                     path_expr.mkdir(exist_ok=True, parents=True)
                 #chmod_and_chown(path_expr, uid=stats.st_uid, gid=stats.st_gid)
-                path_expr_alias = path_expr / path_expr_alias
                 if dry_run:
                     logger.info(f"Dry run: mkdir {path_expr_alias}")
                 else:
