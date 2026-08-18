@@ -62,7 +62,7 @@ def _categorize_anchor_failure(error_text: str) -> str:
     return "unknown failure"
 
 
-@task
+@task(retries=3, retry_delay_seconds=30)
 def run_auto_stitch_anchor(uid, api_key=None, stitch_config=None):
     """Run auto-stitch for a completed Bluesky run.
 

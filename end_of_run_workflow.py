@@ -85,7 +85,7 @@ def slack(func):
             # Send a message to mon-prefect-cms if flow-run is successful.
             message = (
                 f":white_check_mark: {CATALOG_NAME} flow-run successful. (*{flow_run_name}*)\n"
-                f"<{flow_run_link}|View flow run>\n"
+                f"<{flow_run_link}|the flow run link> (*{flow_run_name}*)\n"
                 f"```run_start: {uid}\nscan_id: {scan_id}```"
             )
             mon_prefect_cms.notify(message)
@@ -96,6 +96,7 @@ def slack(func):
             # Send a message to mon-prefect-cms, mon-prefect if flow-run failed.
             message = (
                 f":bangbang: {CATALOG_NAME} flow-run failed. (*{flow_run_name}*)\n"
+                f"<{flow_run_link}|the flow run link> (*{flow_run_name}*)\n"
                 f"```run_start: {uid}\nscan_id: {scan_id}```\n"
                 f"```{tb[-1]}```"
             )
