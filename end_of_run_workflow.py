@@ -47,7 +47,7 @@ def slack(func):
     ):
         flow_run = FlowRunContext.get().flow_run
         flow_run_name = flow_run.dict().get("name")
-        flow_run_link = f"{PREFECT_UI_URL.value()}/flow-runs/{flow_run.id}"
+        flow_run_link = f"{PREFECT_UI_URL.value()}/runs/flow-run/{flow_run.id}"
 
         # Load slack credentials that are saved in Prefect.
         mon_prefect = SlackWebhook.load("mon-prefect")
