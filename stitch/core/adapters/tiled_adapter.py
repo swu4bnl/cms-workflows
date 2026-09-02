@@ -11,7 +11,8 @@ import numpy as np
 from ..grouping import group_tile_entries
 
 
-def _extract_start_doc(run: Any) -> Dict[str, Any]:
+def extract_start_doc(run: Any) -> Dict[str, Any]:
+    """Return a run's start-document dict, handling both live Tiled runs and plain mappings."""
     if hasattr(run, "start"):
         try:
             return dict(run.start)
@@ -48,7 +49,7 @@ def normalize_tiled_run(
 ) -> Dict[str, Any]:
     """Convert one Tiled run to a normalized tile entry."""
     key_map = metadata_key_map or {}
-    raw_md = _extract_start_doc(run)
+    raw_md = extract_start_doc(run)
 
     def pick(name: str, default: Any = None) -> Any:
         source_key = key_map.get(name, name)
